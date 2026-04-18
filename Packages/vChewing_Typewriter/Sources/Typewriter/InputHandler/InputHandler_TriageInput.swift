@@ -13,6 +13,7 @@
 
 extension InputHandlerProtocol {
   public func triageInput(event input: InputSignalProtocol) -> Bool {
+    defer { postInputAIDebounce() }
     guard let session = session else { return false }
     var state: State { session.state }
     currentLM.syncPrefs()

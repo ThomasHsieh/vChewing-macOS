@@ -129,4 +129,15 @@ public protocol PrefMgrProtocol {
   var usingHotKeyRevLookup: Bool { get set }
   var usingHotKeyInputMode: Bool { get set }
   var symbolTableEnabled: Bool { get set }
+  var aiCorrectionEnabled: Bool { get set }
+  var aiCSCEnabled: Bool { get set }
+  var aiRewriteEnabled: Bool { get set }
+  var aiCSCThreshold: Int { get set }
+  var aiRewriteThreshold: Int { get set }
+  var aiDebounceMs: Int { get set }
+  var aiConfidenceThreshold: Double { get set }
+  var aiLocalModelSize: String { get set }
+  var aiEngineType: String { get set }
+  var aiCloudProvider: String { get set }
+  var aiCloudAPIKey: String { get set }
 }

@@ -56,7 +56,7 @@ public final class SmartSwitchState {
   }
 
   /// 重置除 frozenSegments 以外的所有狀態
-  private func resetExceptFrozen() {
+  public func resetExceptFrozen() {
     invalidKeyCount = 0
     isTempEnglishMode = false
     englishBuffer = ""
@@ -217,6 +217,13 @@ public protocol InputHandlerProtocol: AnyObject, InputHandlerCoreProtocol {
   /// 組字區有內容時，處理 Shift 鍵的臨時中英文切換。
   /// - Returns: `true` 表示已在組字區內攔截處理；`false` 表示應交由全域切換處理。
   func handleShiftToggleForComposition() -> Bool
+
+  /// 每次按鍵處理完成後呼叫，供外部模組（如 AI 修正）重置防抖計時器。
+  func postInputAIDebounce()
+}
+
+extension InputHandlerProtocol {
+  public func postInputAIDebounce() {}
 }
 
 // MARK: - KeyDropContext

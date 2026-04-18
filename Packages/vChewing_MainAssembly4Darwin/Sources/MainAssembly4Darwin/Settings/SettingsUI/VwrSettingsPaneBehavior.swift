@@ -12,6 +12,13 @@ import SwiftUI
 
 @available(macOS 14, *)
 public struct VwrSettingsPaneBehavior: View {
+  @AppStorage(UserDef.kAICorrectionEnabled.rawValue)
+  private var aiCorrectionEnabled: Bool = UserDef.kAICorrectionEnabled.boolDefaultValue
+  @AppStorage(UserDef.kAICloudProvider.rawValue)
+  private var aiCloudProvider: String = UserDef.kAICloudProvider.stringDefaultValue
+  @AppStorage(UserDef.kAICloudAPIKey.rawValue)
+  private var aiCloudAPIKey: String = ""
+
   // MARK: - Main View
 
   public var body: some View {
@@ -89,6 +96,36 @@ public struct VwrSettingsPaneBehavior: View {
           }.settingsDescription()
         }
         UserDef.kShiftEisuToggleOffTogetherWithCapsLock.renderUI()
+      }
+
+      Section {
+        UserDef.kAICorrectionEnabled.renderUI()
+        if aiCorrectionEnabled {
+          UserDef.kAICSCEnabled.renderUI()
+          UserDef.kAIRewriteEnabled.renderUI()
+          Picker("引擎", selection: $aiCloudProvider) {
+            Text("Ollama（本機，免 API Key）").tag("ollama")
+            Text("Anthropic Claude").tag("anthropic")
+            Text("Google Gemini").tag("gemini")
+            Text("OpenAI").tag("openai")
+          }
+          .pickerStyle(.menu)
+          if aiCloudProvider == "ollama" {
+            Text("需先在終端機執行：ollama serve，並下載模型 qwen2.5:3b")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          } else {
+            HStack {
+              Text("API Key")
+                .frame(width: 80, alignment: .trailing)
+              SecureField("貼上您的 API Key", text: $aiCloudAPIKey)
+                .textFieldStyle(.roundedBorder)
+            }
+            Text("API Key 暫存於 UserDefaults（PoC 用途）。")
+              .font(.caption)
+              .foregroundStyle(.secondary)
+          }
+        }
       }
     }.formStyled()
       .frame(

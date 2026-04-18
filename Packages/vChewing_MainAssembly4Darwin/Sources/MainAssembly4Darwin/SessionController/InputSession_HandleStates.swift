@@ -7,6 +7,9 @@
 // requirements defined in MIT License.
 
 import AppKit
+import os.log
+
+private let stateLog = OSLog(subsystem: "org.atelierInmu.inputmethod.vChewing", category: "AICorrector")
 
 // MARK: - 狀態調度 (State Handling)
 
@@ -44,9 +47,11 @@ extension SessionProtocol {
     case .ofDeactivated: break // macOS 不再處理 deactivated 狀態。
     case .ofAbortion, .ofCommitting, .ofEmpty:
       if next.type == .ofCommitting {
+        os_log("[AI] switchState ofCommitting: textToCommit=%{public}@", log: stateLog, type: .error, next.textToCommit)
         // `commit()` 會自行完成 JIS / 康熙轉換。
         commit(text: next.textToCommit)
       } else if next.type == .ofEmpty, previous.hasComposition, let inputHandler {
+        os_log("[AI] switchState ofEmpty w/ composition: previous=%{public}@", log: stateLog, type: .error, String(describing: previous.type))
         // `commit()` 會自行完成 JIS / 康熙轉換。
         let textToCommit = inputHandler.committableDisplayText(
           sansReading: previous.type != .ofInputting

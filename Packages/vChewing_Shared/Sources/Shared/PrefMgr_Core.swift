@@ -473,6 +473,41 @@ public final class PrefMgr: PrefMgrProtocol, Sendable {
   public var associatedPhrasesEnabled: Bool {
     didSet { didAskForSyncingLMPrefs?() }
   }
+
+  // MARK: - AI Correction
+
+  @AppProperty(userDef: .kAICorrectionEnabled)
+  public var aiCorrectionEnabled: Bool
+
+  @AppProperty(userDef: .kAICSCEnabled)
+  public var aiCSCEnabled: Bool
+
+  @AppProperty(userDef: .kAIRewriteEnabled)
+  public var aiRewriteEnabled: Bool
+
+  @AppProperty(userDef: .kAICSCThreshold)
+  public var aiCSCThreshold: Int
+
+  @AppProperty(userDef: .kAIRewriteThreshold)
+  public var aiRewriteThreshold: Int
+
+  @AppProperty(userDef: .kAIDebounceMs)
+  public var aiDebounceMs: Int
+
+  @AppProperty(userDef: .kAIConfidenceThreshold)
+  public var aiConfidenceThreshold: Double
+
+  @AppProperty(userDef: .kAILocalModelSize)
+  public var aiLocalModelSize: String
+
+  @AppProperty(userDef: .kAIEngineType)
+  public var aiEngineType: String
+
+  @AppProperty(userDef: .kAICloudProvider)
+  public var aiCloudProvider: String
+
+  @AppProperty(userDef: .kAICloudAPIKey)
+  public var aiCloudAPIKey: String
 }
 
 extension PrefMgr {

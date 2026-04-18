@@ -77,6 +77,9 @@ public final class InputHandler: @MainActor InputHandlerProtocol {
   public var smartSwitchState = SmartSwitchState() // 智慧中英文切換狀態
   public var numberQuickInputHandler = NumberQuickInputHandler() // 數字快打模式處理器
 
+  var aiDebounceWorkItem: DispatchWorkItem?
+  var aiEngine: (any AICorrectorEngine)?
+
   public var currentLM: LMAssembly.LMInstantiator {
     didSet {
       assembler.langModel = currentLM

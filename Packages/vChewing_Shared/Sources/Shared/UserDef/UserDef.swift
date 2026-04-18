@@ -144,6 +144,18 @@ nonisolated public enum UserDef: String, CaseIterable, Identifiable, Sendable {
 
   case kSymbolTableEnabled = "SymbolTableEnabled"
 
+  case kAICorrectionEnabled = "AICorrectionEnabled"
+  case kAICSCEnabled = "AICSCEnabled"
+  case kAIRewriteEnabled = "AIRewriteEnabled"
+  case kAICSCThreshold = "AICSCThreshold"
+  case kAIRewriteThreshold = "AIRewriteThreshold"
+  case kAIDebounceMs = "AIDebounceMs"
+  case kAIConfidenceThreshold = "AIConfidenceThreshold"
+  case kAILocalModelSize = "AILocalModelSize"
+  case kAIEngineType = "AIEngineType"
+  case kAICloudProvider = "AICloudProvider"
+  case kAICloudAPIKey = "AICloudAPIKey"
+
   // MARK: Public
 
   // MARK: - DataType：以關聯值嵌入預設值的資料型別列舉。
@@ -554,6 +566,17 @@ nonisolated extension UserDef {
     case .kUsingHotKeyRevLookup: return .bool(true)
     case .kUsingHotKeyInputMode: return .bool(true)
     case .kSymbolTableEnabled: return .bool(true)
+    case .kAICorrectionEnabled: return .bool(false)
+    case .kAICSCEnabled: return .bool(true)
+    case .kAIRewriteEnabled: return .bool(false)
+    case .kAICSCThreshold: return .integer(5)
+    case .kAIRewriteThreshold: return .integer(10)
+    case .kAIDebounceMs: return .integer(800)
+    case .kAIConfidenceThreshold: return .double(0.7)
+    case .kAILocalModelSize: return .string("small")
+    case .kAIEngineType: return .string("cloud")
+    case .kAICloudProvider: return .string("anthropic")
+    case .kAICloudAPIKey: return .string("")
     }
   }
 }
@@ -1092,6 +1115,27 @@ nonisolated extension UserDef {
         shortTitle: "符號表格",
         description: "啟用後，單擊漂鍵（`）可打開新式符號表格；Ctrl+` 則開啟舊式符號表。"
       )
+    case .kAICorrectionEnabled: return .init(
+        userDef: self,
+        shortTitle: "AI 輔助輸入修正",
+        description: "啟用後，在組字區暫停輸入時透過 AI 自動修正同音字錯誤。目前僅支援本地 MLX 模型（需 Apple Silicon）。"
+      )
+    case .kAICSCEnabled: return .init(
+        userDef: self,
+        shortTitle: "拼字修正（同音字 / 近音字）"
+      )
+    case .kAIRewriteEnabled: return .init(
+        userDef: self,
+        shortTitle: "語意重寫建議（實驗性）"
+      )
+    case .kAICSCThreshold: return nil
+    case .kAIRewriteThreshold: return nil
+    case .kAIDebounceMs: return nil
+    case .kAIConfidenceThreshold: return nil
+    case .kAILocalModelSize: return nil
+    case .kAIEngineType: return .init(userDef: self, shortTitle: "AI 引擎")
+    case .kAICloudProvider: return .init(userDef: self, shortTitle: "雲端服務商")
+    case .kAICloudAPIKey: return nil
     }
   }
 }

@@ -637,4 +637,15 @@ public final class MockPrefMgr: PrefMgrProtocol {
   public var usingHotKeyRevLookup: Bool = true
   public var usingHotKeyInputMode: Bool = true
   public var symbolTableEnabled: Bool = true
+  public var aiCorrectionEnabled: Bool = false
+  public var aiCSCEnabled: Bool = true
+  public var aiRewriteEnabled: Bool = false
+  public var aiCSCThreshold: Int = 5
+  public var aiRewriteThreshold: Int = 10
+  public var aiDebounceMs: Int = 800
+  public var aiConfidenceThreshold: Double = 0.7
+  public var aiLocalModelSize: String = "small"
+  public var aiEngineType: String = "cloud"
+  public var aiCloudProvider: String = "anthropic"
+  public var aiCloudAPIKey: String = ""
 }

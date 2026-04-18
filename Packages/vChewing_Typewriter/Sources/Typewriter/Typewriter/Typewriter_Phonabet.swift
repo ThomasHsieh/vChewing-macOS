@@ -73,8 +73,10 @@ public struct PhonabetTypewriter<Handler: InputHandlerProtocol>: TypewriterProto
     let isValidPhonabetKey = handler.composer.inputValidityCheck(charStr: inputText)
 
     // 重置智慧切換計數（Enter/Esc/Ctrl/Cmd 時）
+    // 不清除 frozenSegments，讓 handleEnter 可以正確提交凍結內容（如 AI 修正）。
+    // Esc 路徑會在 handleEsc → switchState(.ofAbortion) → clear() 中清除 frozenSegments。
     if smartSwitchEnabled, shouldResetSmartSwitchState(input) {
-      handler.smartSwitchState.reset()
+      handler.smartSwitchState.resetExceptFrozen()
     }
 
     // 先嘗試讓注拼槽消化當前按鍵（含可能的聲調覆寫），以保留既有行為。
