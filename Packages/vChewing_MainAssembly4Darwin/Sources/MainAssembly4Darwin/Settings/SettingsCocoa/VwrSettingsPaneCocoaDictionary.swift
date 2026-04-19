@@ -39,17 +39,26 @@ extension SettingsPanesCocoa {
             renderable.currentControl = self.pctUserDictionaryFolder
             renderable.mainViewOverride = self.pathControlMainView
           }
-          NSStackView.build(.vertical) {
-            UserDef.kShouldAutoReloadUserDataFiles.render(fixWidth: contentWidth) { renderable in
-              renderable.currentControl?.target = self
-              renderable.currentControl?.action = #selector(self.lmmgrInitUserLMsWhenShould(_:))
-            }
-            "Due to security concerns, we don't consider implementing anything related to shell script execution here. An input method doing this without implementing App Sandbox will definitely have system-wide vulnerabilities, considering that its related UserDefaults are easily tamperable to execute malicious shell scripts. vChewing is designed to be invulnerable from this kind of attack. Also, official releases of vChewing are Sandboxed."
-              .makeNSLabel(descriptive: true, fixWidth: contentWidth)
-          }
         }?.boxed()
         NSTabView.build {
           NSTabView.TabPage(title: "Ａ") {
+            NSStackView.buildSection(width: innerContentWidth) {
+              NSStackView.build(.vertical) {
+                UserDef.kShouldAutoReloadUserDataFiles.render(fixWidth: innerContentWidth) { renderable in
+                  renderable.currentControl?.target = self
+                  renderable.currentControl?.action = #selector(self.lmmgrInitUserLMsWhenShould(_:))
+                }
+                "Due to security concerns, we don't consider implementing anything related to shell script execution here. An input method doing this without implementing App Sandbox will definitely have system-wide vulnerabilities, considering that its related UserDefaults are easily tamperable to execute malicious shell scripts. vChewing is designed to be invulnerable from this kind of attack. Also, official releases of vChewing are Sandboxed."
+                  .makeNSLabel(descriptive: true, fixWidth: innerContentWidth)
+              }
+              UserDef.kUseExternalFactoryDict.render(fixWidth: innerContentWidth) { renderable in
+                renderable.currentControl?.target = self
+                renderable.currentControl?.action = #selector(self.lmmgrConnectCoreDB(_:))
+              }
+            }?.boxed()
+            NSView()
+          }
+          NSTabView.TabPage(title: "Ｂ") {
             NSStackView.buildSection(width: innerContentWidth) {
               UserDef.kFetchSuggestionsFromPerceptionOverrideModel.render(fixWidth: innerContentWidth)
               UserDef.kReducePOMLifetimeToNoMoreThan12Hours.render(fixWidth: innerContentWidth)
@@ -71,17 +80,13 @@ extension SettingsPanesCocoa {
             }?.boxed()
             NSView()
           }
-          NSTabView.TabPage(title: "Ｂ") {
+          NSTabView.TabPage(title: "Ｃ") {
             NSStackView.buildSection(width: innerContentWidth) {
               UserDef.kEnforceETenDOSCandidateSequence
                 .render(fixWidth: innerContentWidth) { renderable in
                   renderable.currentControl?.target = self
                   renderable.currentControl?.action = #selector(self.lmmgrSyncLMPrefs(_:))
                 }
-              UserDef.kUseExternalFactoryDict.render(fixWidth: innerContentWidth) { renderable in
-                renderable.currentControl?.target = self
-                renderable.currentControl?.action = #selector(self.lmmgrConnectCoreDB(_:))
-              }
               UserDef.kReplaceSymbolMenuNodeWithUserSuppliedData.render(fixWidth: innerContentWidth)
               UserDef.kPhraseReplacementEnabled.render(fixWidth: innerContentWidth) { renderable in
                 renderable.currentControl?.target = self
@@ -89,8 +94,9 @@ extension SettingsPanesCocoa {
                   .action = #selector(self.lmmgrSyncLMPrefsWithReplacementTable(_:))
               }
             }?.boxed()
+            NSView()
           }
-          NSTabView.TabPage(title: "Ｃ") {
+          NSTabView.TabPage(title: "Ｄ") {
             NSStackView.buildSection(width: innerContentWidth) {
               NSStackView.build(.vertical) {
                 NSStackView.build(.horizontal) {
@@ -253,8 +259,9 @@ extension SettingsPanesCocoa {
 extension SettingsPanesCocoa.Dictionary: NSPathControlDelegate {
   public func pathControl(_ pathControl: NSPathControl, acceptDrop info: NSDraggingInfo) -> Bool {
     let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self])
-    guard let url = urls?.first as? URL else { return false }
+    guard let droppedURL = urls?.first as? URL else { return false }
     guard pathControl === pctUserDictionaryFolder else { return false }
+    let url = LMMgr.resolveUserSpecifiedURL(droppedURL)
     let bolPreviousFolderValidity = LMMgr.checkIfSpecifiedUserDataFolderValid(
       PrefMgr.shared.userDataFolderSpecified.expandingTildeInPath
     )
@@ -312,7 +319,8 @@ extension SettingsPanesCocoa.Dictionary: NSPathControlDelegate {
     let window = CtlSettingsCocoa.shared?.window
     dlgOpenPath.beginSheetModal(at: window) { [weak self] result in
       if result == NSApplication.ModalResponse.OK {
-        guard let url = dlgOpenPath.url else { return }
+        guard let selectedURL = dlgOpenPath.url else { return }
+        let url = LMMgr.resolveUserSpecifiedURL(selectedURL)
         // CommonDialog 讀入的路徑沒有結尾斜槓，這會導致檔案目錄合規性判定失準。
         // 所以要手動補回來。
         var newPath = url.path
