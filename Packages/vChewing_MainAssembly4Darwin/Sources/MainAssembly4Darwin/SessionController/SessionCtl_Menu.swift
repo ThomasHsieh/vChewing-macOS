@@ -157,14 +157,13 @@ extension SessionCtl {
   @objc
   public func toggleCassetteMode(_: Any? = nil) {
     core?.resetInputHandler(forceComposerCleanup: true)
+    // Use cassettePath() which includes internal cache fallback.
     if !PrefMgr.shared.cassetteEnabled,
-       !LMMgr.checkCassettePathValidity(PrefMgr.shared.cassettePath) {
+       LMMgr.cassettePath().isEmpty {
       asyncOnMain(bypassAsync: UserDefaults.pendingUnitTests) {
         IMEApp.buzz()
         let alert = NSAlert(error: "i18n:LMMgr.accessFailure.cassette.title".i18n)
-        let informativeText =
-          "i18n:LMMgr.accessFailure.cassette.description"
-        alert.informativeText = informativeText.i18n
+        alert.informativeText = LMMgr.cassetteAccessFailureDescription(path: PrefMgr.shared.cassettePath)
         let result = alert.runModal()
         NSApp.popup()
         if result == NSApplication.ModalResponse.alertFirstButtonReturn {

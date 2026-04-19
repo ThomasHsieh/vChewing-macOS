@@ -72,6 +72,183 @@ extension MainAssemblyTests {
     }
   }
 
+  @Test
+  func test012_LMMgr_CassetteCacheUsesUnitTestSandbox() {
+    let expectedURL = LMMgr.unitTestDataURL(isDefaultFolder: true).appendingPathComponent("Cassettes")
+    #expect(LMMgr.cassetteCacheDirectoryURL.path == expectedURL.path)
+  }
+
+  @Test
+  func test013_LMMgr_CassettePathFallsBackToCachedCopy() throws {
+    let fileManager = FileManager.default
+    let externalURL = LMMgr.unitTestDataURL(isDefaultFolder: false)
+      .appendingPathComponent("phase25-fallback-\(UUID().uuidString).cin2")
+    let cacheURL = LMMgr.cassetteCacheDirectoryURL.appendingPathComponent(externalURL.lastPathComponent)
+
+    defer {
+      try? fileManager.removeItem(at: externalURL)
+      try? fileManager.removeItem(at: cacheURL)
+      LMMgr.resetCassettePath()
+    }
+
+    try fileManager.createDirectory(
+      at: LMMgr.cassetteCacheDirectoryURL,
+      withIntermediateDirectories: true
+    )
+    try Data("phase25-fallback".utf8).write(to: externalURL, options: [.atomic])
+    #expect(LMMgr.importCassetteFileToCache(from: externalURL))
+
+    PrefMgr.shared.cassettePath = externalURL.path
+    try fileManager.removeItem(at: externalURL)
+
+    #expect(LMMgr.cassettePath() == cacheURL.path)
+  }
+
+  @Test
+  func test014_LMMgr_ResetCassettePathKeepsDirectCacheSource() throws {
+    let fileManager = FileManager.default
+    let cacheURL = LMMgr.cassetteCacheDirectoryURL
+      .appendingPathComponent("phase25-direct-cache-\(UUID().uuidString).cin2")
+
+    defer {
+      try? fileManager.removeItem(at: cacheURL)
+      LMMgr.resetCassettePath()
+    }
+
+    try fileManager.createDirectory(
+      at: LMMgr.cassetteCacheDirectoryURL,
+      withIntermediateDirectories: true
+    )
+    try Data("phase25-direct-cache".utf8).write(to: cacheURL, options: [.atomic])
+
+    PrefMgr.shared.cassettePath = cacheURL.path
+    LMMgr.resetCassettePath()
+
+    #expect(fileManager.fileExists(atPath: cacheURL.path))
+  }
+
+  @Test
+  func test015_LMMgr_ResetCassettePathRemovesImportedCacheCopy() throws {
+    let fileManager = FileManager.default
+    let externalURL = LMMgr.unitTestDataURL(isDefaultFolder: false)
+      .appendingPathComponent("phase25-reset-\(UUID().uuidString).cin2")
+    let cacheURL = LMMgr.cassetteCacheDirectoryURL.appendingPathComponent(externalURL.lastPathComponent)
+
+    defer {
+      try? fileManager.removeItem(at: externalURL)
+      try? fileManager.removeItem(at: cacheURL)
+      LMMgr.resetCassettePath()
+    }
+
+    try fileManager.createDirectory(
+      at: LMMgr.cassetteCacheDirectoryURL,
+      withIntermediateDirectories: true
+    )
+    try Data("phase25-reset".utf8).write(to: externalURL, options: [.atomic])
+    #expect(LMMgr.importCassetteFileToCache(from: externalURL))
+
+    PrefMgr.shared.cassettePath = externalURL.path
+    LMMgr.resetCassettePath()
+
+    #expect(fileManager.fileExists(atPath: externalURL.path))
+    #expect(!fileManager.fileExists(atPath: cacheURL.path))
+  }
+
+  @Test
+  func test016_LMMgr_CassetteAccessFailureAddsICloudGuidanceForCloudDocsPaths() {
+    let mirroredPath = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+      .appendingPathComponent("Library", isDirectory: true)
+      .appendingPathComponent("Mobile Documents", isDirectory: true)
+      .appendingPathComponent("com~apple~CloudDocs", isDirectory: true)
+      .appendingPathComponent("phase25-guidance.cin2")
+      .path
+    let advice = "i18n:LMMgr.pathInvalidityFound.iCloudDriveManagedPathAdvice".i18n
+    let privacySuggestion = "i18n:LMMgr.pathInvalidityFound.suggestVerifyingSystemPrivacySettings".i18n
+    let description = LMMgr.cassetteAccessFailureDescription(path: mirroredPath)
+
+    #expect(description.contains(advice))
+    #expect(description.contains(privacySuggestion))
+  }
+
+  @Test
+  func test017_LMMgr_CassetteAccessFailureAddsICloudGuidanceForMirroredFoldersWhenSyncEnabled() {
+    let originalOverride = LMMgr.iCloudPathDetectionOverride
+    LMMgr.iCloudPathDetectionOverride = { candidatePath in
+      candidatePath.contains("/Documents/")
+    }
+    defer { LMMgr.iCloudPathDetectionOverride = originalOverride }
+
+    let mirroredPath = URL(fileURLWithPath: NSHomeDirectory(), isDirectory: true)
+      .appendingPathComponent("Documents", isDirectory: true)
+      .appendingPathComponent("phase25-mirrored-guidance.cin2")
+      .path
+    let advice = "i18n:LMMgr.pathInvalidityFound.iCloudDriveManagedPathAdvice".i18n
+    let privacySuggestion = "i18n:LMMgr.pathInvalidityFound.suggestVerifyingSystemPrivacySettings".i18n
+    let description = LMMgr.cassetteAccessFailureDescription(path: mirroredPath)
+
+    #expect(description.contains(advice))
+    #expect(description.contains(privacySuggestion))
+  }
+
+  @Test
+  func test018_LMMgr_CassetteAccessFailureSkipsICloudGuidanceOutsideMirroredFolders() {
+    let originalOverride = LMMgr.iCloudPathDetectionOverride
+    LMMgr.iCloudPathDetectionOverride = { _ in false }
+    defer { LMMgr.iCloudPathDetectionOverride = originalOverride }
+
+    let localPath = LMMgr.unitTestDataURL(isDefaultFolder: false)
+      .appendingPathComponent("phase25-local-guidance.cin2")
+      .path
+    let base = "i18n:LMMgr.accessFailure.cassette.description".i18n
+    let advice = "i18n:LMMgr.pathInvalidityFound.iCloudDriveManagedPathAdvice".i18n
+    let privacySuggestion = "i18n:LMMgr.pathInvalidityFound.suggestVerifyingSystemPrivacySettings".i18n
+    let description = LMMgr.cassetteAccessFailureDescription(path: localPath)
+
+    #expect(description.contains(base))
+    #expect(!description.contains(advice))
+    #expect(description.contains(privacySuggestion))
+  }
+
+  @Test
+  func test019_LMMgr_ResolveUserSpecifiedURLResolvesCassetteSymlink() throws {
+    let fileManager = FileManager.default
+    let baseURL = LMMgr.unitTestDataURL(isDefaultFolder: false)
+    let targetURL = baseURL.appendingPathComponent("phase25-real-\(UUID().uuidString).cin2")
+    let symlinkURL = baseURL.appendingPathComponent("phase25-link-\(UUID().uuidString).cin2")
+
+    defer {
+      try? fileManager.removeItem(at: symlinkURL)
+      try? fileManager.removeItem(at: targetURL)
+    }
+
+    try Data("phase25-symlink-target".utf8).write(to: targetURL, options: [.atomic])
+    try fileManager.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: targetURL.path)
+
+    let resolvedURL = LMMgr.resolveUserSpecifiedURL(symlinkURL)
+
+    #expect(resolvedURL.path == targetURL.standardizedFileURL.path)
+  }
+
+  @Test
+  func test020_LMMgr_ResolveUserSpecifiedURLResolvesUserDataFolderSymlink() throws {
+    let fileManager = FileManager.default
+    let baseURL = LMMgr.unitTestDataURL(isDefaultFolder: false)
+    let targetURL = baseURL.appendingPathComponent("phase25-real-folder-\(UUID().uuidString)", isDirectory: true)
+    let symlinkURL = baseURL.appendingPathComponent("phase25-link-folder-\(UUID().uuidString)", isDirectory: true)
+
+    defer {
+      try? fileManager.removeItem(at: symlinkURL)
+      try? fileManager.removeItem(at: targetURL)
+    }
+
+    try fileManager.createDirectory(at: targetURL, withIntermediateDirectories: true)
+    try fileManager.createSymbolicLink(atPath: symlinkURL.path, withDestinationPath: targetURL.path)
+
+    let resolvedURL = LMMgr.resolveUserSpecifiedURL(symlinkURL)
+
+    #expect(resolvedURL.path == targetURL.standardizedFileURL.path)
+  }
+
   // MARK: - Input Handler Tests.
 
   /// 測試基本的打字組句（不是ㄅ半注音）。

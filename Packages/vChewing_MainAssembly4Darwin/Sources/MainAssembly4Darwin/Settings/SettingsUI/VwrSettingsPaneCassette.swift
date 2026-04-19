@@ -21,11 +21,6 @@ public struct VwrSettingsPaneCassette: View {
 
       Section {
         VStack(alignment: .leading) {
-          Text(
-            LocalizedStringKey(
-              "Choose your desired cassette file path. Will be omitted if invalid."
-            )
-          )
           HStack(spacing: 3) {
             PathControl(pathDroppable: $cassettePath) { pathControl in
               pathControl.allowedTypes = ["cin2", "cin", "vcin"]
@@ -34,7 +29,8 @@ public struct VwrSettingsPaneCassette: View {
                 .i18n
             } acceptDrop: { pathControl, info in
               let urls = info.draggingPasteboard.readObjects(forClasses: [NSURL.self])
-              guard let url = urls?.first as? URL else { return false }
+              guard let droppedURL = urls?.first as? URL else { return false }
+              let url = LMMgr.resolveUserSpecifiedURL(droppedURL)
               let bolPreviousPathValidity = LMMgr.checkCassettePathValidity(
                 PrefMgr.shared.cassettePath.expandingTildeInPath
               )
@@ -43,6 +39,7 @@ public struct VwrSettingsPaneCassette: View {
                 pathControl.url = url
                 LMMgr.loadCassetteData()
                 BookmarkManager.shared.saveBookmark(for: url)
+                LMMgr.importCassetteFileToCache(from: url)
                 return true
               }
               // On Error:
@@ -69,9 +66,12 @@ public struct VwrSettingsPaneCassette: View {
               Text("×")
             }
           }
+          Text(LocalizedStringKey("i18n:settings.Prompt.ChooseDesiredCassetteFilePath"))
+            .settingsDescription()
         }
         UserDef.kCassetteEnabled.renderUI {
-          if PrefMgr.shared.cassetteEnabled, !LMMgr.checkCassettePathValidity(PrefMgr.shared.cassettePath) {
+          // Use cassettePath() which includes internal cache fallback.
+          if PrefMgr.shared.cassetteEnabled, LMMgr.cassettePath().isEmpty {
             IMEApp.buzz()
             LMMgr.resetCassettePath()
             PrefMgr.shared.cassetteEnabled = false
@@ -101,7 +101,7 @@ public struct VwrSettingsPaneCassette: View {
       ) {
         Button("OK".i18n, role: .cancel) {}
       } message: {
-        Text("i18n:LMMgr.accessFailure.cassette.description".i18n)
+        Text(LMMgr.cassetteAccessFailureDescription(path: cassettePath))
       }
       .fileImporter(
         isPresented: $isShowingFileImporter,
@@ -118,11 +118,13 @@ public struct VwrSettingsPaneCassette: View {
 
         switch result {
         case let .success(urls):
-          guard let url = urls.first else { return }
+          guard let selectedURL = urls.first else { return }
+          let url = LMMgr.resolveUserSpecifiedURL(selectedURL)
           if LMMgr.checkCassettePathValidity(url.path) {
             cassettePath = url.path
             LMMgr.loadCassetteData()
             BookmarkManager.shared.saveBookmark(for: url)
+            LMMgr.importCassetteFileToCache(from: url)
           } else {
             IMEApp.buzz()
             if !bolPreviousPathValidity {

@@ -98,6 +98,7 @@ public final class LMMgr {
 
   public static func prepareForUnitTests() {
     guard UserDefaults.pendingUnitTests else { return }
+    iCloudPathDetectionOverride = nil
     if #available(macOS 10.15, *) {
       prepareUnitTestSandbox()
     }
@@ -106,6 +107,7 @@ public final class LMMgr {
   }
 
   public static func resetAfterUnitTests() {
+    iCloudPathDetectionOverride = nil
     Shared.InputMode.resetLangModelCache()
     resetUnitTestSandbox()
     LMAssembly.resetSharedState()
@@ -155,7 +157,17 @@ public final class LMMgr {
     LMAssembly.LMInstantiator.setCassetCandidateKeyValidator {
       CandidateKey.validate(keys: $0) == nil
     }
-    LMAssembly.LMInstantiator.loadCassetteData(path: cassettePath())
+    let resolvedPath = cassettePath()
+    // If the external path was resolved successfully, refresh the internal cache
+    // so that the cache stays up-to-date for future fallback (e.g. after reboot when
+    // iCloud Drive bookmark becomes stale).
+    if !resolvedPath.isEmpty {
+      let rawPath = PrefMgr.shared.cassettePath.expandingTildeInPath
+      if resolvedPath == rawPath {
+        importCassetteFileToCache(from: URL(fileURLWithPath: rawPath))
+      }
+    }
+    LMAssembly.LMInstantiator.loadCassetteData(path: resolvedPath)
   }
 
   public static func loadUserPhrasesData(type: LMAssembly.ReplacableUserDataType? = nil) {
@@ -334,6 +346,8 @@ public final class LMMgr {
 
   // MARK: Internal
 
+  static var iCloudPathDetectionOverride: ((String) -> Bool)?
+
   // MARK: Unit Test Sandbox
 
   @available(macOS 10.15, *)
@@ -418,7 +432,7 @@ public final class LMMgr {
         asyncOnMain(bypassAsync: UserDefaults.pendingUnitTests) {
           self.callModalAlert(
             msg: "i18n:LMMgr.pathInvalidityFound.userDataFolder.title".i18n,
-            infoText: "i18n:LMMgr.pathInvalidityFound.userDataFolder.description".i18n
+            infoText: Self.userDataFolderInvalidityDescription(path: path)
           )
         }
       }
@@ -433,7 +447,7 @@ public final class LMMgr {
         asyncOnMain(bypassAsync: UserDefaults.pendingUnitTests) {
           self.callModalAlert(
             msg: "i18n:LMMgr.pathInvalidityFound.cassette.title".i18n,
-            infoText: "i18n:LMMgr.pathInvalidityFound.cassette.description".i18n
+            infoText: Self.cassettePathInvalidityDescription(path: path)
           )
         }
       }
