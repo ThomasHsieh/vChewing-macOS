@@ -39,6 +39,30 @@ public struct PhonabetTypewriter<Handler: InputHandlerProtocol>: TypewriterProto
       }
     }
 
+    // MARK: 智慧中英文切換 - 凍結游標模式攔截（僅中文模式）
+    if prefs.smartChineseEnglishSwitchEnabled, handler.smartSwitchState.isInFrozenCursorMode {
+      // Space 或 ↓：嘗試對凍結段落內的中文字重新選候選字詞
+      if input.isSpace || (input.isDown && !input.isShiftHold && !input.isControlHold
+        && !input.isCommandHold && !input.isOptionHold) {
+        return handleFrozenCandidateRequest(input, session: session)
+      }
+      // 導航鍵讓後續 handler 處理
+      let isNavigationKey = input.isBackSpace || input.isEnter || input.isEsc
+        || input.isCursorBackward || input.isCursorForward
+      if isNavigationKey { return nil }
+      // 可印列 ASCII 字元：直接插入凍結段落
+      let char = input.text
+      if char.count == 1, let scalar = char.unicodeScalars.first,
+         scalar.value >= 0x20, scalar.value <= 0x7E {
+        handler.smartSwitchState.insertASCIIAtFrozenCursor(char.first!)
+        session.switchState(handler.generateStateOfInputting())
+        return true
+      }
+      // 其他字元（注音、功能鍵等）：蜂鳴阻斷
+      handler.errorCallback?("FrozenCursor: unsupported input blocked.")
+      return true
+    }
+
     // MARK: 智慧中英文切換 - '/' 特例（組字器為空時優先作為斜線字元）
     // 在大千等鍵盤排列中，'/' 對應注音 'ㄥ'，但在智慧中英文切換模式下，
     // '/' 通常是路徑分隔符（/usr/bin）或日期分隔符（2026/04/04），
@@ -308,6 +332,10 @@ extension PhonabetTypewriter {
     guard let session = handler.session else { return false }
     let prefs = handler.prefs
     guard prefs.smartChineseEnglishSwitchEnabled else { return false }
+    // 若在凍結游標模式內，先退出再進行切換
+    if handler.smartSwitchState.isInFrozenCursorMode {
+      handler.smartSwitchState.exitFrozenCursorMode()
+    }
 
     let hasComposition = !handler.smartSwitchState.frozenSegments.isEmpty
       || !handler.assembler.isEmpty
@@ -603,9 +631,10 @@ extension PhonabetTypewriter {
 
   /// 檢查是否應該重置智慧切換狀態
   private func shouldResetSmartSwitchState(_ input: InputSignalProtocol) -> Bool {
-    // 當輸入 Enter、Esc 或其他特殊按鍵時重置
-    return input.isEnter || input.isEsc ||
-      (input.isControlHold || input.isCommandHold)
+    // Esc 與修飾鍵組合時重置智慧切換狀態。
+    // 注意：Enter 不在此列——handleEnter() 透過 committableDisplayText() 取得完整提交內容
+    // （含凍結段落），若在此處提前 reset() 會清空 frozenSegments，導致凍結段落丟失。
+    return input.isEsc || input.isControlHold || input.isCommandHold
   }
 
   /// 處理臨時英文模式下的按鍵輸入
@@ -690,40 +719,8 @@ extension PhonabetTypewriter {
       return true
     }
 
-    // 空白鍵：偵測雙擊以切回中文，或插入空格繼續英文輸入
+    // 空白鍵：插入空格至英文緩衝
     if input.isSpace {
-      if handler.smartSwitchState.tryConfirmDoubleSpace() {
-        // 雙擊成立：退出英文模式，將英文緩衝（去除第一下 SPACE 加入的尾部空格）
-        // 保留為凍結前綴，讓組字區繼續顯示這段文字，不送出也不清除。
-        var englishToKeep = handler.smartSwitchState.englishBuffer
-        if englishToKeep.hasSuffix(" ") {
-          englishToKeep = String(englishToKeep.dropLast())
-        }
-        _ = handler.smartSwitchState.exitTempEnglishMode() // 清除英文模式狀態（保留 frozenSegments）
-        if !englishToKeep.isEmpty {
-          handler.smartSwitchState.freezeSegment(englishToKeep)
-        }
-        // 建構組字區狀態（frozenDisplayText 會顯示凍結前綴 + assembler 內容）
-        if !handler.smartSwitchState.frozenSegments.isEmpty || !handler.assembler.isEmpty {
-          var state = handler.generateStateOfInputting(guarded: true)
-          state.tooltip = "中"
-          state.tooltipDuration = 1.5
-          state.data.tooltipColorState = .prompt
-          session.switchState(state)
-        } else {
-          // 組字區與凍結段落均為空：先用 ofAbortion 清除前一個 ofInputting 狀態，
-          // 再切到帶 tooltip 的 ofEmpty，避免 session 誤 commit 前一個 state 的 displayedText。
-          session.switchState(State.ofAbortion())
-          var state = State.ofEmpty()
-          state.tooltip = "中"
-          state.tooltipDuration = 1.5
-          state.data.tooltipColorState = .prompt
-          session.switchState(state)
-        }
-        return true
-      }
-      // 第一下（或窗口已逾期後的新第一下）：記錄時間戳並插入空格
-      handler.smartSwitchState.recordFirstSpace()
       handler.smartSwitchState.appendEnglishChar(" ")
       let frozen = handler.smartSwitchState.frozenDisplayText
       let buffer = handler.smartSwitchState.englishBuffer
@@ -733,6 +730,64 @@ extension PhonabetTypewriter {
         highlightAt: nil
       )
       session.switchState(state)
+      return true
+    }
+
+    // 左箭頭：英文緩衝內左移，到頭後進入凍結游標模式
+    if input.isCursorBackward, input.commonKeyModifierFlags.isEmpty {
+      if handler.smartSwitchState.isInFrozenCursorMode {
+        if !handler.smartSwitchState.moveFrozenCursorBackward() {
+          handler.errorCallback?("7045E6F3")
+        } else {
+          let (frozen, buffer) = (handler.smartSwitchState.frozenDisplayText, handler.smartSwitchState.englishBuffer)
+          let pos = handler.smartSwitchState.frozenCursor!
+          session.switchState(State.ofInputting(
+            displayTextSegments: [frozen, buffer].filter { !$0.isEmpty },
+            cursor: pos, highlightAt: nil
+          ))
+        }
+      } else if handler.smartSwitchState.englishBufferCursor > 0 {
+        handler.smartSwitchState.englishBufferCursor -= 1
+        let (frozen, buffer) = (handler.smartSwitchState.frozenDisplayText, handler.smartSwitchState.englishBuffer)
+        session.switchState(State.ofInputting(
+          displayTextSegments: [frozen, buffer].filter { !$0.isEmpty },
+          cursor: frozen.count + handler.smartSwitchState.englishBufferCursor, highlightAt: nil
+        ))
+      } else if !handler.smartSwitchState.frozenSegments.isEmpty {
+        handler.smartSwitchState.enterFrozenCursorMode()
+        handler.smartSwitchState.moveFrozenCursorBackward()
+        let (frozen, buffer) = (handler.smartSwitchState.frozenDisplayText, handler.smartSwitchState.englishBuffer)
+        let pos = handler.smartSwitchState.frozenCursor!
+        session.switchState(State.ofInputting(
+          displayTextSegments: [frozen, buffer].filter { !$0.isEmpty },
+          cursor: pos, highlightAt: nil
+        ))
+      } else {
+        handler.errorCallback?("7045E6F3")
+      }
+      return true
+    }
+
+    // 右箭頭：凍結模式右移或退出凍結模式；英文緩衝右移
+    if input.isCursorForward, input.commonKeyModifierFlags.isEmpty {
+      if handler.smartSwitchState.isInFrozenCursorMode {
+        handler.smartSwitchState.moveFrozenCursorForward()
+        let (frozen, buffer) = (handler.smartSwitchState.frozenDisplayText, handler.smartSwitchState.englishBuffer)
+        let pos = handler.smartSwitchState.frozenCursor ?? (frozen.count + handler.smartSwitchState.englishBufferCursor)
+        session.switchState(State.ofInputting(
+          displayTextSegments: [frozen, buffer].filter { !$0.isEmpty },
+          cursor: pos, highlightAt: nil
+        ))
+      } else if handler.smartSwitchState.englishBufferCursor < handler.smartSwitchState.englishBuffer.count {
+        handler.smartSwitchState.englishBufferCursor += 1
+        let (frozen, buffer) = (handler.smartSwitchState.frozenDisplayText, handler.smartSwitchState.englishBuffer)
+        session.switchState(State.ofInputting(
+          displayTextSegments: [frozen, buffer].filter { !$0.isEmpty },
+          cursor: frozen.count + handler.smartSwitchState.englishBufferCursor, highlightAt: nil
+        ))
+      } else {
+        handler.errorCallback?("A96AAD58")
+      }
       return true
     }
 
@@ -801,7 +856,6 @@ extension PhonabetTypewriter {
   ) -> Bool {
     // 1. 半形空括號配對刪除（如 "(|)" → 同時刪除兩側括號）
     if handler.handleHalfWidthBracketBackspace() {
-      handler.smartSwitchState.firstSpaceTimestamp = nil
       let frozen = handler.smartSwitchState.frozenDisplayText
       let buffer = handler.smartSwitchState.englishBuffer
       if buffer.isEmpty, frozen.isEmpty {
@@ -818,9 +872,31 @@ extension PhonabetTypewriter {
       return true
     }
 
+    // 1b. 凍結游標模式：刪除凍結段落內游標前字元
+    if handler.smartSwitchState.isInFrozenCursorMode {
+      if handler.smartSwitchState.deleteFrozenCharBeforeCursor() {
+        if handler.smartSwitchState.frozenSegments.isEmpty {
+          handler.smartSwitchState.exitFrozenCursorMode()
+        }
+        let (frozen, buffer) = (handler.smartSwitchState.frozenDisplayText, handler.smartSwitchState.englishBuffer)
+        if buffer.isEmpty, frozen.isEmpty {
+          handler.smartSwitchState.isTempEnglishMode = false
+          session.switchState(State.ofAbortion())
+        } else {
+          let pos = handler.smartSwitchState.frozenCursor ?? (frozen.count + handler.smartSwitchState.englishBufferCursor)
+          session.switchState(State.ofInputting(
+            displayTextSegments: [frozen, buffer].filter { !$0.isEmpty },
+            cursor: pos, highlightAt: nil
+          ))
+        }
+      } else {
+        handler.errorCallback?("9D69908D")
+      }
+      return true
+    }
+
     // 2. 游標在最左端（無字元可刪）：退出英文模式，清除緩衝（含游標右側的右括號）
     if handler.smartSwitchState.englishBufferCursor == 0 {
-      handler.smartSwitchState.firstSpaceTimestamp = nil
       handler.smartSwitchState.englishBuffer = ""
       handler.smartSwitchState.englishBufferCursor = 0
       handler.smartSwitchState.isTempEnglishMode = false
@@ -833,7 +909,6 @@ extension PhonabetTypewriter {
     }
 
     // 3. 一般刪除：刪除游標前一字元
-    handler.smartSwitchState.firstSpaceTimestamp = nil
     handler.smartSwitchState.deleteEnglishCharBeforeCursor()
     let frozen = handler.smartSwitchState.frozenDisplayText
     let buffer = handler.smartSwitchState.englishBuffer
@@ -852,21 +927,45 @@ extension PhonabetTypewriter {
   }
 
   /// 若 assembler 非空，將已組漢字凍結至 frozenSegments（不提交給 OS）。
-  /// 用於智慧中英文切換觸發前，保留組字區的漢字內容讓使用者最後一併提交。
+  /// 同時逐節保存注音讀音（keyArray），以便日後凍結候選重選使用。
   private func freezeAssemblerContentIfNeeded() {
     guard !handler.assembler.isEmpty else { return }
-    // `generateStateOfInputting(sansReading:)` 在 InputHandler_HandleStates.swift 中已將
-    // frozenSegments 前置於顯示段落，因此 fullDisplayed = frozenDisplayText + assemblerText。
-    // 這裡剝除已知的凍結前綴，只取 assembler 部分做為新的凍結段落。
-    let fullDisplayed = handler.generateStateOfInputting(sansReading: true).displayedText
-    let alreadyFrozen = handler.smartSwitchState.frozenDisplayText
-    guard fullDisplayed.hasPrefix(alreadyFrozen) else {
-      assertionFailure("freezeAssemblerContentIfNeeded: fullDisplayed '\(fullDisplayed)' does not start with alreadyFrozen '\(alreadyFrozen)'")
-      return
+    for gram in handler.assembler.assembledSentence {
+      // isReadingMismatched 時讀音不可靠，以空陣列標記（不支援候選重選，已知限制）
+      let keys: [String] = gram.isReadingMismatched ? [] : gram.keyArray
+      handler.smartSwitchState.freezeSegment(gram.value, keyArray: keys)
     }
-    let assemblerPart = String(fullDisplayed.dropFirst(alreadyFrozen.count))
-    guard !assemblerPart.isEmpty else { return }
-    handler.smartSwitchState.freezeSegment(assemblerPart)
+  }
+
+  /// 在凍結游標模式下按 Space/↓ 時，嘗試對游標前的凍結中文字開啟候選重選窗。
+  private func handleFrozenCandidateRequest(
+    _ input: some InputSignalProtocol,
+    session: Session
+  ) -> Bool {
+    guard let frozenPos = handler.smartSwitchState.frozenCursor else { return false }
+    guard frozenPos > 0 else {
+      handler.errorCallback?("FrozenCursor: no char before cursor")
+      return true
+    }
+    let charPos = frozenPos - 1
+    guard let reading = handler.smartSwitchState.readingForFrozenChar(at: charPos),
+          !reading.isEmpty else {
+      handler.errorCallback?("FrozenCursor: no reading for char at \(charPos)")
+      return true
+    }
+    // 凍結現有 assembler 內容（若非空），避免丟失
+    freezeAssemblerContentIfNeeded()
+    // 清空 assembler，載入目標讀音
+    handler.assembler.clear()
+    _ = handler.assembler.insertKey(reading)
+    handler.assemble()
+    handler.assembler.cursor = handler.assembler.length
+    // 記錄正在替換的凍結字元位置，暫時退出凍結游標模式
+    handler.smartSwitchState.frozenCandidateCharPosition = charPos
+    handler.smartSwitchState.exitFrozenCursorMode()
+    // 開啟候選選字窗
+    session.switchState(handler.generateStateOfCandidates())
+    return true
   }
 
   /// 在 composer 接收按鍵後，判斷是否應觸發智慧中英文切換。
